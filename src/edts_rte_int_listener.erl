@@ -74,7 +74,7 @@ stop() ->
                                   | {already_attached, pid(), pid()}.
 %%------------------------------------------------------------------------------
 maybe_attach(Pid) ->
-  edts_rte:debug("in maybe_attach, Pid:~p~n", [Pid]),
+  edts_rte_app:debug("in maybe_attach, Pid:~p~n", [Pid]),
   case gen_server:call(?SERVER, {attach, Pid}) of
     {ok, attach, AttPid} ->
       {attached, AttPid, Pid};
@@ -205,7 +205,7 @@ handle_call({attach, Pid}, _From, #listener_state{proc = unattached} = State) ->
   {reply, {ok, attach, self()}, State#listener_state{proc = Pid}};
 handle_call( {attach, Pid}, _From
            , #listener_state{listener = Listener, proc = Pid} = State) ->
-  edts_rte:debug("in hancle_call, already attach, Pid:~p~n", [Pid]),
+  edts_rte_app:debug("in hancle_call, already attach, Pid:~p~n", [Pid]),
   {reply, {error, {already_attached, Listener, Pid}}, State};
 
 handle_call({interpret, Modules}, _From, State) ->
@@ -226,7 +226,7 @@ handle_call({interpret, Modules}, _From, State) ->
 handle_call({set_breakpoint, Module, Fun, Arity}, _From, State) ->
   Reply = case int:break_in(Module, Fun, Arity) of
             ok    -> {ok, set, {Module, Fun, Arity}};
-            Error -> edts_rte:debug("set_breakpoint error:~p~n", [Error]),
+            Error -> edts_rte_app:debug("set_breakpoint error:~p~n", [Error]),
                      Error
           end,
   {reply, Reply, State};
@@ -246,9 +246,9 @@ handle_call(_Cmd, _From, #listener_state{proc = unattached} = State) ->
   {reply, {error, unattached}, State};
 
 handle_call(continue, From, #listener_state{proc = Pid} = State) ->
-  edts_rte:debug("before int:continue~n"),
+  edts_rte_app:debug("before int:continue~n"),
   int:continue(Pid),
-  edts_rte:debug("after int:continue. pid~p~n", [Pid]),
+  edts_rte_app:debug("after int:continue. pid~p~n", [Pid]),
   Subs = State#listener_state.subscribers,
   {noreply, State#listener_state{subscribers = add_to_ulist(From, Subs)}};
 
@@ -298,7 +298,7 @@ handle_info({Meta, {break_at, Module, Line, Depth}}, State) ->
 
 %% Became idle (not executing any code under debugging)
 handle_info({_Meta, idle}, State) ->
-  edts_rte:debug("in handle_info, idle~n"),
+  edts_rte_app:debug("in handle_info, idle~n"),
   %% Crap, why this can't be executed?
   %% Bindings = int:meta(Meta, bindings, nostack),
   notify(idle),
@@ -319,9 +319,9 @@ handle_info({_Meta, {attached, _, _, _}}, State) ->
 %% Process under debug terminated
 handle_info({Meta, {exit_at, _, _Reason, _}}, State) ->
   Bindings = int:meta(Meta, bindings, nostack),
-  edts_rte:debug("in handle_info, till exit_at, Bindings:~p~n", [Bindings]),
+  edts_rte_app:debug("in handle_info, till exit_at, Bindings:~p~n", [Bindings]),
   edts_rte_server:send_exit(),
-  edts_rte:debug("exit signal sent~n"),
+  edts_rte_app:debug("exit signal sent~n"),
   {noreply, State#listener_state{proc = unattached}};
 
 handle_info(Msg, State) ->
@@ -356,10 +356,10 @@ code_change(_OldVsn, State, _Extra) ->
 %%% Internal functions
 %%%===================================================================
 do_attach_pid(Pid) ->
-  edts_rte:debug("in handle_call, attach, Pid:~p~n", [Pid]),
+  edts_rte_app:debug("in handle_call, attach, Pid:~p~n", [Pid]),
   register_attached(self()),
   int:attached(Pid),
-  edts_rte:debug("rte listener ~p attached to ~p~n", [self(), Pid]),
+  edts_rte_app:debug("rte listener ~p attached to ~p~n", [self(), Pid]),
   ok.
 
 %%------------------------------------------------------------------------------

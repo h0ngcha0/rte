@@ -30,6 +30,7 @@
         , get_module_sorted_fun_info/1
         , is_tail_call/3
         , read_and_add_records/2
+        , record_table_name/0
         , traverse_clause_struct/2
         , var_to_val_in_fun/3
         ]).
@@ -46,19 +47,19 @@
 
 %%%_* API ======================================================================
 convert_list_to_term(Arguments, _RT) ->
-  edts_rte:debug("args:~p~n", [Arguments]),
+  edts_rte_app:debug("args:~p~n", [Arguments]),
   %% N.B. this is very hackish. added a '.' because
   %%      erl_scan:string/1 requires full expression with dot
   {ok, Tokens,__Endline} = erl_scan:string(Arguments++"."),
-  edts_rte:debug("tokens:~p~n", [Tokens]),
+  edts_rte_app:debug("tokens:~p~n", [Tokens]),
   {ok, AbsForm0}         = erl_parse:parse_exprs(Tokens),
   AbsForm                = replace_var_with_val_in_expr(AbsForm0, [], []),
-  edts_rte:debug("absf:~p~n", [AbsForm0]),
+  edts_rte_app:debug("absf:~p~n", [AbsForm0]),
   Val     = erl_eval:exprs( AbsForm
                           , erl_eval:new_bindings()),
-  edts_rte:debug("Valg:~p~n", [Val]),
+  edts_rte_app:debug("Valg:~p~n", [Val]),
   {value, Value,_Bs} = Val,
-  edts_rte:debug("val:~p~n", [Value]),
+  edts_rte_app:debug("val:~p~n", [Value]),
   Value.
 
 expand_records(RT, E0) ->
@@ -193,6 +194,12 @@ get_module_sorted_fun_info(M) ->
     end, [], FunAritys),
   lists:reverse(lists:sort(AllLineFunAritys)).
 
+%% @doc The name of the ETS table to store the tuple representation of
+%%      the records
+-spec record_table_name() -> atom().
+record_table_name() ->
+  edts_rte_record_table.
+
 %% @doc When MFA and depth are the same, check if it is still a
 %%      differnet function call.
 %%      This could happen when:
@@ -213,13 +220,13 @@ get_module_sorted_fun_info(M) ->
 -spec is_tail_call([clause_struct()], non_neg_integer(), non_neg_integer())
                   -> boolean().
 is_tail_call(ClauseStructs, PreviousLine, NewLine) ->
-  edts_rte:debug("8) is_tail_call:~p~n"
+  edts_rte_app:debug("8) is_tail_call:~p~n"
             , [[ClauseStructs, PreviousLine, NewLine]]),
   {LineSmallerClauses, _LineBiggerClauses} =
     lists:splitwith(fun(#clause_struct{line = L}) ->
                       L < NewLine
                     end, ClauseStructs),
-  edts_rte:debug("9) LineSmaller:~p~nLineBigger:~p~n"
+  edts_rte_app:debug("9) LineSmaller:~p~nLineBigger:~p~n"
             , [LineSmallerClauses, _LineBiggerClauses]),
   #clause_struct{touched = Touched, line = L} =
     hd(lists:reverse(LineSmallerClauses)),
@@ -494,7 +501,7 @@ var_to_val_in_fun(AbsForm, AllClausesLn, Bindings) ->
   NewFunBody            = do_var_to_val_in_fun( AbsForm
                                               , AllClausesLn
                                               , Bindings),
-  %% edts_rte:debug("New Body before flatten: ~p~n", [NewFunBody]),
+  %% edts_rte_app:debug("New Body before flatten: ~p~n", [NewFunBody]),
   NewForm               = erl_pp:form(NewFunBody),
   lists:flatten(NewForm).
 
@@ -504,7 +511,7 @@ do_var_to_val_in_fun( {function, L, FuncName, Arity, Clauses0}
   Clauses = replace_var_with_val_in_clauses( Clauses0
                                            , AllClausesLn
                                            , Bindings),
-  %% edts_rte:debug("Replaced Clauses are:~p~n", [Clauses0]),
+  %% edts_rte_app:debug("Replaced Clauses are:~p~n", [Clauses0]),
   {function, L, FuncName, Arity, Clauses}.
 
 %% @doc replace variable names with values in each of the clauses
@@ -629,9 +636,13 @@ replace_var_with_val_in_expr( {'receive', L, Clauses0, Int, Exprs0}
   Clauses  = replace_var_with_val_in_clauses(Clauses0, ECLn, Bs),
   Expr     = replace_var_with_val_in_exprs(Exprs0, ECLn, Bs),
   {'receive', L, Clauses, Int, Expr};
+replace_var_with_val_in_expr( {'fun', L, {clauses, Clauses0}}
+                            , ECLn, Bs)                    ->
+  Clauses  = replace_var_with_val_in_clauses(Clauses0, ECLn, Bs),
+  {'fun', L, {clauses, Clauses}};
 replace_var_with_val_in_expr( {record, _, _Name, _Fields} = Record
                             , _ECLn, _Bs)                                 ->
-  expand_records(edts_rte_server:record_table_name(), Record);
+  expand_records(record_table_name(), Record);
 replace_var_with_val_in_expr([Statement0|T], ECLn, Bs)                    ->
   Statement = replace_var_with_val_in_expr(Statement0, ECLn, Bs),
   [Statement | replace_var_with_val_in_expr(T, ECLn, Bs)];
@@ -652,11 +663,8 @@ do_replace(VarName, Value, L) ->
   replace_line_num(ValForm, L).
 
 make_replaced_str(VarName, Value) ->
-  lists:flatten(io_lib:format( "{~p,~p,~p}."
-                             , [special_symbol(), VarName, Value])).
-
-special_symbol() ->
-  "__edts_rte__".
+  lists:flatten(io_lib:format( "{b,~p,s,~p,e}."
+                             , [VarName, Value])).
 
 get_tokens(ValStr) ->
   {ok, Tokens, _} = erl_scan:string(ValStr),
@@ -667,7 +675,7 @@ maybe_replace_pid(Tokens0, Value) ->
   case is_pid_tokens(Tokens0) of
     true  ->
       ValStr0 = lists:flatten(io_lib:format("{__pid__, ~p}", [Value])),
-      edts_rte:debug("pid token:~p~n", [Tokens0]),
+      edts_rte_app:debug("pid token:~p~n", [Tokens0]),
       ValStr1 = re:replace(ValStr0, "\\.", ",", [{return, list}, global]),
       ValStr2 = re:replace(ValStr1, "\\<", "{", [{return, list}, global]),
       ValStr  = re:replace(ValStr2, "\\>", "}", [{return, list}, global]),

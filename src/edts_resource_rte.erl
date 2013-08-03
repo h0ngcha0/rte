@@ -86,7 +86,7 @@ from_json(ReqData, Ctx) ->
            , [Node, Cmd, Args]),
   Info        = run_command(Cmd, Args, Node),
   io:format("command info:~p~n", [Info]),
-  Data    = encode_rtee_info(Info),
+  Data    = encode_rte_info(Info),
   {true, wrq:set_resp_body(mochijson2:encode(Data), ReqData), Ctx}.
 
 to_atom(Bin) when is_list(Bin)->
@@ -107,23 +107,24 @@ mk_convert_fun(_)                          ->
 to_json(ReqData, Ctx) ->
   Node    = orddict:fetch(nodename, Ctx),
   Command = orddict:fetch(cmd, Ctx),
+  io:format("cmd:~p~n", [Command]),
   Info    = edts:Command(Node),
-  Data    = encode_rtee_info(Info),
+  Data    = encode_rte_info(Info),
   {mochijson2:encode(Data), ReqData, Ctx}.
 
 %%%_* Internal functions =======================================================
 %%------------------------------------------------------------------------------
 %% @doc
-%% Encodes rtee replies into the appropriate json structure
+%% Encodes rte replies into the appropriate json structure
 %% @end
--spec encode_rtee_info({ok, Info :: term()}) -> term().
+-spec encode_rte_info({ok, Info :: term()}) -> term().
 %%------------------------------------------------------------------------------
-encode_rtee_info({ok, Info}) ->
-  do_encode_rtee_info(Info);
-encode_rtee_info({error, Error}) ->
+encode_rte_info({ok, Info}) ->
+  do_encode_rte_info(Info);
+encode_rte_info({error, Error}) ->
   [{state, error}, {message, Error}].
 
-do_encode_rtee_info(State) ->
+do_encode_rte_info(State) ->
   [{state, State}].
 
 retrieve_cmd_and_args(ReqData) ->
@@ -138,13 +139,7 @@ do_retrieve_cmd_and_args({struct,[{<<"cmd">>, Cmd}]}) ->
   {to_atom(Cmd), nil}.
 
 run_command(rte_run, [Module, Fun, Args], Node)                 ->
-  rte_run(Node, Module, Fun, Args).
-
-rte_run(Node, Module, Func, Args) ->
-  case edts_dist:call(Node, edts_rte_server, rte_run, [Module, Func, Args]) of
-    {badrpc, _} -> {error, not_found};
-    Result      -> Result
-  end.
+  edts_rte:rte_run(Node, Module, Fun, Args).
 
 %%%_* Unit tests ===============================================================
 init_test() ->

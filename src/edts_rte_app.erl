@@ -21,37 +21,67 @@
 %% start the edts_rte supervisor.
 
 %%%_* Module declaration =======================================================
--module(edts_rte).
+-module(edts_rte_app).
 
--behaviour(edts_plugin).
+-behaviour(gen_server).
 
 %%%_* Exports =================================================================
--export([ rte_run/4
-        ]).
+%% server API
+-export([start/0, stop/0, start_link/0]).
 
-%% Behaviour exports
--export([edts_server_services/0,
-         project_node_modules/0,
-         project_node_services/0]).
+-export([started_p/0]).
+
+%% gen_server callbacks
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2,
+         terminate/2, code_change/3]).
+
+-export([ debug/1
+        , debug/2]).
 
 %%%_* Defines ==================================================================
-%%%_* API ======================================================================
-rte_run(Node, Module, Func, Args) ->
-  case edts_dist:call(Node, edts_rte_server, rte_run, [Module, Func, Args]) of
-    {badrpc, _} -> {error, not_found};
-    Result      -> Result
-  end.
+-define(DEBUG, true).
+-define(SERVER, ?MODULE).
 
-%% Behaviour callbacks
-edts_server_services()  -> [].
-project_node_modules()  ->
-  [ edts_rte_app
-  , edts_rte_util
-  , edts_rte_int_listener
-  , edts_rte_server
-  , edts_rte_sup
-  ].
-project_node_services() -> [edts_rte_app].
+%%%_* API ======================================================================
+start() ->
+  ?MODULE:start_link(),
+  ok.
+
+stop() ->
+  ok.
+
+start_link() ->
+  gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
+
+started_p() -> whereis(?SERVER) =/= undefined.
+
+%%%_* gen_server callbacks  ====================================================
+init([]) ->
+  {ok, _Pid} = edts_rte_sup:start(),
+  {ok, node()}.
+
+handle_call(Msg, From, State) ->
+  {reply, {ok, From, Msg}, State}.
+
+handle_info(_Msg, _State) ->
+  {noreply, _State}.
+
+handle_cast(_Msg, State) ->
+  {noreply, State}.
+
+terminate(_Reason, _State) ->
+  ok.
+
+code_change(_OldVsn, State, _Extra) ->
+  {ok, State}.
+
+debug(Str) -> debug(Str, []).
+
+-ifdef(DEBUG).
+debug(FmtStr, Args) -> io:format(FmtStr, Args).
+-else.
+debug(_FmtStr, _Args) -> ok.
+-endif.
 
 %%%_* Unit tests ===============================================================
 

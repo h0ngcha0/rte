@@ -133,7 +133,7 @@ send_exit() ->
 %% FIXME: need to come up with a way to add all existing records from
 %%        a project and remove records when recompile a particular module
 read_and_add_records(Module) ->
-  edts_rte_util:read_and_add_records(Module, record_table_name()).
+  edts_rte_util:read_and_add_records(Module, edts_rte_util:record_table_name()).
 
 %%%_* gen_server callbacks  ====================================================
 %%------------------------------------------------------------------------------
@@ -154,7 +154,7 @@ init([]) ->
   %% records in erlang are purely syntactic sugar. create a table to store the
   %% mapping between records and their definitions.
   %% set the table to public to make debugging easier
-  RcdTbl = ets:new(record_table_name(), [public, named_table]),
+  RcdTbl = ets:new(edts_rte_util:record_table_name(), [public, named_table]),
   {ok, #rte_state{record_table = RcdTbl}}.
 
 handle_call({rte_run, Module, Fun, Args0}, _From, State) ->
@@ -162,11 +162,11 @@ handle_call({rte_run, Module, Fun, Args0}, _From, State) ->
   %% only record support
   RcdTbl   = State#rte_state.record_table,
   AddedRds = edts_rte_util:read_and_add_records(Module, RcdTbl),
-  edts_rte:debug("added record definitions:~p~n", [AddedRds]),
+  edts_rte_app:debug("added record definitions:~p~n", [AddedRds]),
 
   Args     = binary_to_list(Args0),
   ArgsTerm = edts_rte_util:convert_list_to_term(Args, RcdTbl),
-  edts_rte:debug("arguments:~p~n", [ArgsTerm]),
+  edts_rte_app:debug("arguments:~p~n", [ArgsTerm]),
 
   %% set breakpoints
   [Module] = edts_rte_int_listener:interpret_modules([Module]),
@@ -176,7 +176,7 @@ handle_call({rte_run, Module, Fun, Args0}, _From, State) ->
 
   %% run mfa
   Pid      = erlang:spawn(make_rte_run_fun(Module, Fun, ArgsTerm)),
-  edts_rte:debug("called function pid:~p~n", [Pid]),
+  edts_rte_app:debug("called function pid:~p~n", [Pid]),
 
   %% root element of the mfa_info_tree
   MFAInfo  = #mfa_info{ key        = {undefined, undefined, undefined, 0}
@@ -200,7 +200,7 @@ handle_call({rte_run, Module, Fun, Args0}, _From, State) ->
                                       {noreply, state(), Timeout::timeout()} |
                                       {stop, Reason::atom(), state()}.
 handle_info(_Msg, State) ->
-  %% edts_rte:debug("rte_server handle_info ...., Msg:~p~n", [Msg]),
+  %% edts_rte_app:debug("rte_server handle_info ...., Msg:~p~n", [Msg]),
   {noreply, State}.
 
 %%------------------------------------------------------------------------------
@@ -215,14 +215,14 @@ handle_info(_Msg, State) ->
 handle_cast({finished_attach, Pid}, State) ->
   Pid = State#rte_state.proc,
   edts_rte_int_listener:step(),
-  edts_rte:debug("finish attach.....~n"),
+  edts_rte_app:debug("finish attach.....~n"),
   {noreply, State};
 handle_cast({break_at, {Bindings, Module, Line, Depth}}, State0) ->
   {MFA, State} = get_mfa(State0, Module, Line),
-  edts_rte:debug("1) send_binding.. before step. depth:~p~n", [Depth]),
-  edts_rte:debug("2) send_binding.. Line:~p, Bindings:~p~n",[Line, Bindings]),
+  edts_rte_app:debug("1) send_binding.. before step. depth:~p~n", [Depth]),
+  edts_rte_app:debug("2) send_binding.. Line:~p, Bindings:~p~n",[Line, Bindings]),
 
-  edts_rte:debug("3) new mfa:~p~n", [MFA]),
+  edts_rte_app:debug("3) new mfa:~p~n", [MFA]),
 
   NewMFAInfoTree = update_mfa_info_tree( MFA, Depth, Line, Bindings
                                        , State#rte_state.mfa_info_tree),
@@ -232,11 +232,11 @@ handle_cast({break_at, {Bindings, Module, Line, Depth}}, State0) ->
 
   {noreply, State#rte_state{mfa_info_tree = NewMFAInfoTree}};
 handle_cast(exit, #rte_state{result = RteResult} = State0) ->
-  edts_rte:debug("rte server got exit~n"),
+  edts_rte_app:debug("rte server got exit~n"),
   State = on_exit(RteResult, State0),
   {noreply, State#rte_state{exit_p=true}};
 handle_cast({rte_result, Result}, #rte_state{exit_p = ExitP} = State) ->
-  edts_rte:debug("rte server got RTE Result:~p~n", [Result]),
+  edts_rte_app:debug("rte server got RTE Result:~p~n", [Result]),
   ExitP andalso on_exit(Result, State),
   {noreply, State#rte_state{result=Result}};
 handle_cast(_Msg, State) ->
@@ -331,7 +331,7 @@ on_exit(undefined, State) ->
 on_exit(Result, State) ->
   AllReplacedFuns = mfa_info_tree_form_to_str(State#rte_state.mfa_info_tree),
   ok = send_result_to_clients(Result, concat_funs_str(AllReplacedFuns)),
-  edts_rte:debug("======= mfa_info_tree: ~p~n",[State#rte_state.mfa_info_tree]),
+  edts_rte_app:debug("======= mfa_info_tree: ~p~n",[State#rte_state.mfa_info_tree]),
   State.
 
 %% @doc Update the mfa_info_tree.
@@ -499,12 +499,6 @@ mfa_info_tree_do_form_to_str([MFAInfo|T], Acc0) ->
   Acc         = Acc0 ++ [{MFAInfo#mfa_info.key, ReplacedFun} | AccChildren],
   mfa_info_tree_do_form_to_str(T, Acc).
 
-%% @doc The name of the ETS table to store the tuple representation of
-%%      the records
--spec record_table_name() -> atom().
-record_table_name() ->
-  edts_rte_record_table.
-
 %% @doc Concat a list of replaced function strings together.
 -spec concat_funs_str([{Key, string()}]) -> string()
          when Key :: {module(), function(), arity()}.
@@ -539,8 +533,8 @@ indent_unit() ->
 
 %% @doc Send the function body back to Clients.
 send_result_to_clients(RteResult, FunBody) ->
-  edts_rte:debug("final rte result:~p~n", [RteResult]),
-  edts_rte:debug("final function body is:~p~n", [FunBody]),
+  edts_rte_app:debug("final rte result:~p~n", [RteResult]),
+  edts_rte_app:debug("final function body is:~p~n", [FunBody]),
   Result = string_escape_chars(RteResult ++ FunBody, escaped_chars()),
   lists:foreach( fun(Fun) -> Fun(Result) end
                , [ fun send_result_to_emacs/1
@@ -550,8 +544,8 @@ send_result_to_clients(RteResult, FunBody) ->
 send_result_to_emacs(FunBody) ->
   BufferName = io_lib:format("*~s*", [make_id()]),
   EclientCmd = make_emacsclient_cmd(BufferName, FunBody),
-  edts_rte:debug("FunBody:~p~n", [FunBody]),
-  edts_rte:debug("emacsclient CMD:~p~n", [EclientCmd]),
+  edts_rte_app:debug("FunBody:~p~n", [FunBody]),
+  edts_rte_app:debug("emacsclient CMD:~p~n", [EclientCmd]),
   os:cmd(EclientCmd).
 
 %% @doc Construct the emacsclient command to send the function
@@ -581,7 +575,7 @@ make_rte_run_fun(Module, Fun, ArgsTerm) ->
              catch
                T:E -> lists:flatten(io_lib:format("~p:~p", [T, E]))
              end,
-    edts_rte:debug("RTE Result:~p~n", [Result]),
+    edts_rte_app:debug("RTE Result:~p~n", [Result]),
     send_rte_result(make_result_str({Module, Fun, length(ArgsTerm), Result}))
   end.
 

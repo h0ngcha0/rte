@@ -158,9 +158,11 @@ returned by edts rte"
                    (setq displayed-p t))
           (message ""))))))
 
+;; question mark means non-greedy
 (defun rte-regex ()
   "Regex to match the return replaced vars from the edts-rte"
-  "\{\"__edts_rte__\",\\([^\(}\|,\)]+\\),\\([^\(}\|,\)]+\\)\}")
+  "\{b,\\(.+?\\),s,\\(.+?\\)\,e}"
+  )
 
 (defadvice forward-char (after forward-display-rte-var)
   "Advice for forward-char for displaying the rte variable name"
@@ -203,5 +205,13 @@ value returned by rte."
   "Keywords in edts-rte mode that needs to be added to font lock"
   `((,(rte-regex) 0 'font-lock-warning-face prepend)
     ("^\\(\\.+\\)" 0 'highlight prepend)))
+
+(add-hook 'edts-code-after-compile-hook 'edts-rte)
+
+(defun edts-rte (result)
+  "Execute the edts-rte-run function when there is no error in
+the file"
+  (when (not (eq result 'error))
+    (edts-rte-run)))
 
 (provide 'edts-rte)
