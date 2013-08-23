@@ -22,11 +22,17 @@
          (resource   (list "plugins" "rte" node "cmd"))
          (args       nil)
          (module     (car (find-mfa-under-point)))
-         (fun        (cadr (find-mfa-under-point)))
-         (body       (get_rte_run_body module fun arguments)))
+         (function   (cadr (find-mfa-under-point)))
+         (arity      (caddr (find-mfa-under-point)))
+         (body       (get_rte_run_body module function arguments)))
     (ensure-args-saved arguments)
-    (edts-rest-post resource args body)
-    ))
+    (edts-log-info "RTE Running %s:%s/%s" module function arity)
+    (let* ((res (edts-rest-post resource args body)))
+      (if (equal (cdr (assoc 'state (cdr (assoc 'body res)))) "ok")
+          (null (edts-log-info "RTE Info: %s"
+                               (cdr (assoc 'message (cdr (assoc 'body res))))))
+        (null (edts-log-error "RTE Error: %s"
+                              (cdr (assoc 'message (cdr (assoc 'body res))))))))))
 
 (defun param-buffer ()
   "Return the name of the parameter buffer for the current node"

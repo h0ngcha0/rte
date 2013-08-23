@@ -158,38 +158,37 @@ init([]) ->
   {ok, #rte_state{record_table = RcdTbl}}.
 
 handle_call({rte_run, Module, Fun, Args0}, _From, State) ->
-  %% try to read the record from the current module.. right now this is the
-  %% only record support
   RcdTbl   = State#rte_state.record_table,
-  AddedRds = edts_rte_util:read_and_add_records(Module, RcdTbl),
-  edts_rte_app:debug("added record definitions:~p~n", [AddedRds]),
-
   Args     = binary_to_list(Args0),
   ArgsTerm = edts_rte_util:convert_list_to_term(Args, RcdTbl),
+  Arity    = length(ArgsTerm),
+
   edts_rte_app:debug("arguments:~p~n", [ArgsTerm]),
 
-  %% set breakpoints
-  [Module] = edts_rte_int_listener:interpret_modules([Module]),
-  Arity    = length(ArgsTerm),
-  {ok, set, {Module, Fun, Arity}} =
-    edts_rte_int_listener:set_breakpoint(Module, Fun, Arity),
+  %% try to read the record from the current module.. right now this is the
+  %% only record support
+  Res = exec([ fun() -> read_record_definition(Module, RcdTbl) end
+             , fun() -> interpret_current_module(Module) end
+             , fun() -> set_breakpoint_beg(Module, Fun, Arity) end
+             , fun() -> run_mfa(Module, Fun, ArgsTerm) end]),
 
-  %% run mfa
-  Pid      = erlang:spawn(make_rte_run_fun(Module, Fun, ArgsTerm)),
-  edts_rte_app:debug("called function pid:~p~n", [Pid]),
-
-  %% root element of the mfa_info_tree
-  MFAInfo  = #mfa_info{ key        = {undefined, undefined, undefined, 0}
-                      , is_current = true
-                      , children   = []
-                      },
-
-  {reply, {ok, finished}, State#rte_state{ module_cache          = []
-                                         , proc                  = Pid
-                                         , mfa_info_tree         = [MFAInfo]
-                                         , result                = undefined
-                                         , exit_p                = false
-                                         }}.
+  case Res of
+    {ok, Pid}    ->
+      InitMFAD = {undefined, undefined, undefined, 0},
+      MFAInfo  = #mfa_info{ key        = InitMFAD
+                          , is_current = true
+                          , children   = []
+                          },
+      State1   = State#rte_state{ module_cache   = []
+                                , proc           = Pid
+                                , mfa_info_tree  = [MFAInfo]
+                                , result         = undefined
+                                , exit_p         = false
+                                },
+      {reply, {ok, finished}, State1};
+    {error, Rsn} ->
+      {reply, {error, Rsn}, State}
+  end.
 
 %%------------------------------------------------------------------------------
 %% @private
@@ -266,6 +265,51 @@ code_change(_OldVsn, State, _Extra) ->
   {ok, State}.
 
 %%%_* Internal =================================================================
+%% @doc Read and store the record definitions from the specified module.
+read_record_definition(Module, RcdTbl) ->
+  AddedRds = edts_rte_util:read_and_add_records(Module, RcdTbl),
+  edts_rte_app:debug("added record definitions:~p~n", [AddedRds]),
+  ok.
+
+%% @doc interpret the current module
+interpret_current_module(Module) ->
+  case edts_rte_int_listener:interpret_modules([Module]) of
+    [Module] -> ok;
+    []       -> {error, unable_to_interpret_module}
+  end.
+
+%% @doc set the break point at the beginning of the function
+set_breakpoint_beg(Module, Function, Arity) ->
+  case edts_rte_int_listener:set_breakpoint(Module, Function, Arity) of
+    {ok, set, {Module, Function, Arity}} -> ok;
+    _                                    -> {error, unable_to_set_breakpoint}
+  end.
+
+%% @doc run mfa in a seperate process
+run_mfa(Module, Fun, ArgsTerm) ->
+  Pid = erlang:spawn(make_rte_run_fun(Module, Fun, ArgsTerm)),
+  edts_rte_app:debug("called function pid:~p~n", [Pid]),
+  {ok, Pid}.
+
+%% @doc @see tulib_maybe:do/1
+-spec exec([fun()]) -> {ok, atom()} | {error, atom()}.
+exec([F])    -> lift(F);
+exec([F|Fs]) -> case lift(F) of
+                  ok               -> exec(Fs);
+                  {ok, _}          -> exec(Fs);
+                  {error, _} = Err -> Err
+              end.
+
+%% @doc @see tulib_maybe:lift/1
+lift(F) ->
+  case F() of
+    ok           -> {ok, ok};
+    {ok, Res}    -> {ok, Res};
+    error        -> {error, error};
+    {error, Rsn} -> {error, Rsn};
+    Rsn          -> {ok, Rsn}
+  end.
+
 %%------------------------------------------------------------------------------
 %% @doc Send the rte result to the rte server.
 -spec send_rte_result(term()) -> ok.
@@ -331,7 +375,8 @@ on_exit(undefined, State) ->
 on_exit(Result, State) ->
   AllReplacedFuns = mfa_info_tree_form_to_str(State#rte_state.mfa_info_tree),
   ok = send_result_to_clients(Result, concat_funs_str(AllReplacedFuns)),
-  edts_rte_app:debug("======= mfa_info_tree: ~p~n",[State#rte_state.mfa_info_tree]),
+  edts_rte_app:debug( "======= mfa_info_tree: ~p~n"
+                    , [State#rte_state.mfa_info_tree]),
   State.
 
 %% @doc Update the mfa_info_tree.
