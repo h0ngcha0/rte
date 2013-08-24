@@ -68,9 +68,7 @@ content_types_provided(ReqData, Ctx) ->
   {Map, ReqData, Ctx}.
 
 malformed_request(ReqData, Ctx) ->
-  %% edts_resource_lib:validate(ReqData, Ctx, [nodename, cmd, exclusions]).
   edts_resource_lib:validate(ReqData, Ctx, [nodename]).
-  %% {false, ReqData, Ctx}.
 
 resource_exists(ReqData, Ctx) ->
   {edts_resource_lib:exists_p(ReqData, Ctx, [nodename]), ReqData, Ctx}.
@@ -109,6 +107,7 @@ to_json(ReqData, Ctx) ->
   Command = orddict:fetch(cmd, Ctx),
   edts_log:debug("cmd:~p~n", [Command]),
   Info    = edts:Command(Node),
+  edts_log:debug("return from cmd:~p~n", [Info]),
   Data    = encode_rte_info(Info),
   {mochijson2:encode(Data), ReqData, Ctx}.
 
@@ -131,8 +130,12 @@ do_retrieve_cmd_and_args({struct,[{<<"cmd">>, Cmd}, {<<"args">>, Args}]}) ->
 do_retrieve_cmd_and_args({struct,[{<<"cmd">>, Cmd}]}) ->
   {to_atom(Cmd), nil}.
 
-run_command(rte_run, [Module, Fun, Args], Node)                 ->
-  edts_rte:rte_run(Node, Module, Fun, Args).
+run_command(rte_run, [Module, Fun, Args], Node) ->
+  edts_rte:rte_run(Node, Module, Fun, Args);
+run_command(interpret_module, [Module], Node)   ->
+  edts_rte:interpret_module(Node, Module);
+run_command(uninterpret_module, [Module], Node) ->
+  edts_rte:uninterpret_module(Node, Module).
 
 %%%_* Unit tests ===============================================================
 init_test() ->

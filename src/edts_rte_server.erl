@@ -219,7 +219,8 @@ handle_cast({finished_attach, Pid}, State) ->
 handle_cast({break_at, {Bindings, Module, Line, Depth}}, State0) ->
   {MFA, State} = get_mfa(State0, Module, Line),
   edts_rte_app:debug("1) send_binding.. before step. depth:~p~n", [Depth]),
-  edts_rte_app:debug("2) send_binding.. Line:~p, Bindings:~p~n",[Line, Bindings]),
+  edts_rte_app:debug("2) send_binding.. Line:~p, Bindings:~p~n",
+                     [Line, Bindings]),
 
   edts_rte_app:debug("3) new mfa:~p~n", [MFA]),
 
@@ -273,10 +274,8 @@ read_record_definition(Module, RcdTbl) ->
 
 %% @doc interpret the current module
 interpret_current_module(Module) ->
-  case edts_rte_int_listener:interpret_modules([Module]) of
-    [Module] -> ok;
-    []       -> {error, unable_to_interpret_module}
-  end.
+  edts_rte_app:debug("interpreting:~p~n", [Module]),
+  edts_rte_int_listener:interpret_module(Module).
 
 %% @doc set the break point at the beginning of the function
 set_breakpoint_beg(Module, Function, Arity) ->

@@ -27,15 +27,12 @@
 %% server API
 -export([start/0, stop/0, start_link/0]).
 
--export([ interpret_modules/1
-        , interpret_node/1
-        , is_node_interpreted/0
+-export([ interpret_module/1
         , is_module_interpreted/1
         , maybe_attach/1
         , set_breakpoint/3
         , step/0
-        , uninterpret_modules/1
-        , uninterpret_node/0
+        , uninterpret_module/1
         ]).
 
 %% gen_server callbacks
@@ -84,33 +81,13 @@ maybe_attach(Pid) ->
 
 %%------------------------------------------------------------------------------
 %% @doc
-%% Make Modules interpretable. Returns the list of modules which were
-%% interpretable and set as such.
+%% Interpret the module. Return ok if the module is interpreted, otherwise
+%% return error message.
 %% @end
--spec interpret_modules(Modules :: [module()]) -> {ok, [module()]}.
+-spec interpret_module(Module :: module()) -> {ok, module()} | {error, atom()}.
 %%------------------------------------------------------------------------------
-interpret_modules(Modules) ->
-  gen_server:call(?SERVER, {interpret, Modules}).
-
-%%------------------------------------------------------------------------------
-%% @doc
-%% Make all loaded modules interpretable.
-%% Returns the list of modules which were
-%% interpretable and set as such.
-%% @end
--spec interpret_node(Exclusions :: [module()]) -> {ok, [module()]}.
-%%------------------------------------------------------------------------------
-interpret_node(Exclusions) ->
-  interpret_modules(get_safe_modules(Exclusions)).
-
-%%------------------------------------------------------------------------------
-%% @doc
-%% Reports if code in the current project node is being interpreted.
-%% @end
--spec is_node_interpreted() -> boolean().
-%%------------------------------------------------------------------------------
-is_node_interpreted() ->
-  gen_server:call(?SERVER, is_node_interpreted).
+interpret_module(Module) ->
+  gen_server:call(?SERVER, {interpret, Module}).
 
 %%------------------------------------------------------------------------------
 %% @doc
@@ -134,21 +111,12 @@ set_breakpoint(Module, Fun, Arity) ->
 
 %%------------------------------------------------------------------------------
 %% @doc
-%% Uninterprets Modules.
+%% Uninterpret Module.
 %% @end
--spec uninterpret_modules(Modules :: [module()]) -> ok.
+-spec uninterpret_module(Module :: module()) -> ok.
 %%------------------------------------------------------------------------------
-uninterpret_modules(Modules) ->
-  gen_server:call(?SERVER, {uninterpret, Modules}).
-
-%%------------------------------------------------------------------------------
-%% @doc
-%% Make all interpreted modules uninterpretable.
-%% @end
--spec uninterpret_node() -> {ok, [module()]}.
-%%------------------------------------------------------------------------------
-uninterpret_node() ->
-  uninterpret_modules(int:interpreted()).
+uninterpret_module(Module) ->
+  gen_server:call(?SERVER, {uninterpret, Module}).
 
 %%------------------------------------------------------------------------------
 %% @doc
@@ -208,20 +176,10 @@ handle_call( {attach, Pid}, _From
   edts_rte_app:debug("in hancle_call, already attach, Pid:~p~n", [Pid]),
   {reply, {error, {already_attached, Listener, Pid}}, State};
 
-handle_call({interpret, Modules}, _From, State) ->
-  Reply = lists:filter(fun(E) -> E =/= mod_uninterpretable end,
-                       lists:map(fun(Module) ->
-                                     try
-                                       case int:interpretable(Module) of
-                                         true -> {module, Name} = int:i(Module),
-                                                 Name;
-                                         _    -> mod_uninterpretable
-                                       end
-                                     catch
-                                       _:_ -> mod_uninterpretable
-                                     end
-                                 end, Modules)),
-  {reply, Reply, State#listener_state{interpretation = true}};
+handle_call({interpret, Module}, _From, State) ->
+  %% Can not check if the module is already interpreted using is_interpreted/1
+  %% because even if it returns true, breakpoint wont be hit.
+  {reply, interpret(Module), State#listener_state{interpretation = true}};
 
 handle_call({set_breakpoint, Module, Fun, Arity}, _From, State) ->
   Reply = case int:break_in(Module, Fun, Arity) of
@@ -231,16 +189,18 @@ handle_call({set_breakpoint, Module, Fun, Arity}, _From, State) ->
           end,
   {reply, Reply, State};
 
-handle_call({uninterpret, Modules}, _From, State) ->
-  lists:map(fun(Module) -> int:n(Module) end, Modules),
-  {reply, {ok, uninterpreted}, State#listener_state{interpretation = false}};
+handle_call({uninterpret, Module}, _From, State) ->
+  Reply = case is_interpreted(Module) of
+            true  ->
+              int:n(Module),
+              {ok, make_return_message(Module, " uninterpreted")};
+            false ->
+              {error, make_return_message(Module, " is not interpreted")}
+          end,
+  {reply, Reply, State#listener_state{interpretation = false}};
 
 handle_call({is_interpreted, Module}, _From, State) ->
-  {reply, lists:member(Module, int:interpreted()), State};
-
-handle_call(is_node_interpreted, _From,
-            #listener_state{interpretation = Value} = State) ->
-  {reply, Value, State};
+  {reply, is_interpreted(Module), State};
 
 handle_call(_Cmd, _From, #listener_state{proc = unattached} = State) ->
   {reply, {error, unattached}, State};
@@ -362,6 +322,25 @@ do_attach_pid(Pid) ->
   edts_rte_app:debug("rte listener ~p attached to ~p~n", [self(), Pid]),
   ok.
 
+is_interpreted(Module) ->
+  lists:member(Module, int:interpreted()).
+
+interpret(Module) ->
+  try
+    case int:interpretable(Module) of
+      true ->
+        {module, Module} = int:i(Module),
+        {ok, make_return_message(Module, " interpreted")};
+      _    ->
+        {error, make_return_message(Module, " can not be interpreted")}
+    end
+  catch
+    _:_ -> {error, make_return_message(Module, " can not be interpreted")}
+  end.
+
+make_return_message(Module, Msg) ->
+  list_to_atom(string:concat(atom_to_list(Module), Msg)).
+
 %%------------------------------------------------------------------------------
 %% @doc
 %% Notifies all registered rte listener clients of a change in debugger state
@@ -386,22 +365,6 @@ notify(Info, [Client|R]) ->
 %%------------------------------------------------------------------------------
 register_attached(Pid) ->
   gen_server:cast(?SERVER, {register_attached, Pid}).
-
-%%------------------------------------------------------------------------------
-%% @doc
-%% Returns a list of all loaded modules except OTP modules and those
-%% explicitly belonging to ExcludedApps
-%%
--spec get_safe_modules(ExcludedApps :: [atom()]) -> [module()].
-%%------------------------------------------------------------------------------
-get_safe_modules(ExcludedApps) ->
-  ExcludedAppDirs = [code:lib_dir(App, ebin) || App <- ExcludedApps],
-  ErlLibDir = code:lib_dir(),
-  [Module || {Module, Filename} <- code:all_loaded(),
-             is_list(Filename),
-             not lists:prefix(ErlLibDir, Filename),
-             not code:is_module_native(Module),
-             not lists:member(filename:dirname(Filename), ExcludedAppDirs)].
 
 add_to_ulist(E, L) ->
   case lists:member(E, L) of

@@ -18,21 +18,41 @@
 (defun edts-rte-run-with-args (arguments)
   "Run on function using rte_run"
   (interactive "sInput Arguments:")
-  (let* ((node       (edts-buffer-node-name))
-         (resource   (list "plugins" "rte" node "cmd"))
-         (args       nil)
-         (module     (car (find-mfa-under-point)))
-         (function   (cadr (find-mfa-under-point)))
-         (arity      (caddr (find-mfa-under-point)))
-         (body       (get_rte_run_body module function arguments)))
-    (ensure-args-saved arguments)
-    (edts-log-info "RTE Running %s:%s/%s" module function arity)
-    (let* ((res (edts-rest-post resource args body)))
+  (if (server-running-p)
+      (let* ((module     (car (find-mfa-under-point)))
+             (function   (cadr (find-mfa-under-point)))
+             (arity      (caddr (find-mfa-under-point)))
+             (body       (get-rte-run-body module function arguments)))
+        (ensure-args-saved arguments)
+        (edts-rte-log-info "Running %s:%s/%s" module function arity)
+        (rte-rest-post body))
+    (edts-rte-log-error "Emacs server is not running")))
+
+(defun edts-rte-interpret-module ()
+  "Interpret the current module"
+  (interactive)
+  (let* ((module     (ferl-get-module))
+         (body       (get-interpret-module-body module)))
+    (edts-rte-log-info "Interpreting module: %s" module)
+    (rte-rest-post body)))
+
+(defun edts-rte-uninterpret-module ()
+  "Un-interpret the current module"
+  (interactive)
+  (let* ((module     (ferl-get-module))
+         (body       (get-uninterpret-module-body module)))
+    (edts-rte-log-info "Uninterpreting module: %s" module)
+    (rte-rest-post body)))
+
+(defun rte-rest-post (body)
+  (let* ((node     (edts-buffer-node-name))
+         (resource (list "plugins" "rte" node "cmd"))
+         (res      (edts-rest-post resource nil body)))
       (if (equal (cdr (assoc 'state (cdr (assoc 'body res)))) "ok")
-          (null (edts-log-info "RTE Info: %s"
-                               (cdr (assoc 'message (cdr (assoc 'body res))))))
-        (null (edts-log-error "RTE Error: %s"
-                              (cdr (assoc 'message (cdr (assoc 'body res))))))))))
+          (null (edts-rte-log-info
+                 "%s" (cdr (assoc 'message (cdr (assoc 'body res))))))
+        (null (edts-rte-log-error
+               "%s" (cdr (assoc 'message (cdr (assoc 'body res)))))))))
 
 (defun param-buffer ()
   "Return the name of the parameter buffer for the current node"
@@ -76,13 +96,19 @@
 (defun trim-string (string)
   "Remove white spaces in beginning and ending of STRING.
 White space here is any of: space, tab, emacs newline (line feed, ASCII 10)."
-(replace-regexp-in-string "\\`[ \t\n]*" "" (replace-regexp-in-string "[ \t\n]*\\'" "" string))
-)
+(replace-regexp-in-string "\\`[ \t\n]*" "" (replace-regexp-in-string "[ \t\n]*\\'" "" string)))
 
-(defun get_rte_run_body(module function args)
-  "Get the json body for rte_run rest request"
-  (format "{\"cmd\": \"rte_run\",\"args\": [\"%s\",\"%s\", \"%s\"]}" module function args)
-  )
+(defun get-rte-run-body(module function args)
+  "Get the json body for rte-run rest request"
+  (format "{\"cmd\": \"rte_run\",\"args\": [\"%s\",\"%s\", \"%s\"]}" module function args))
+
+(defun get-interpret-module-body (module)
+  "Get the json body for the interpret-module rest request"
+  (format "{\"cmd\": \"interpret_module\",\"args\": [\"%s\"]}" module))
+
+(defun get-uninterpret-module-body (module)
+  "Get the json body for the uninterpret-module rest request"
+  (format "{\"cmd\": \"uninterpret_module\",\"args\": [\"%s\"]}" module))
 
 ;; find the mfa of the point
 (defun find-mfa-under-point ()
@@ -90,8 +116,7 @@ White space here is any of: space, tab, emacs newline (line feed, ASCII 10)."
   (interactive)
   (save-excursion
     (ferl-beginning-of-function)
-    (edts-mfa-at))
-  )
+    (edts-mfa-at)))
 
 (defun edts-display-erl-fun-in-emacs (string buffer)
   "display a piece of erlang code in a buffer"
@@ -104,6 +129,14 @@ White space here is any of: space, tab, emacs newline (line feed, ASCII 10)."
       (insert string)
       (erlang-mode)
       (edts-rte-mode))))
+
+(defun edts-rte-log-error (msg &rest args)
+  "Log MSG at error-level."
+  (apply #'edts-log-error (concat "RTE " msg) args))
+
+(defun edts-rte-log-info (msg &rest args)
+  "Log MSG at info-level."
+  (apply #'edts-log-info (concat "RTE " msg) args))
 
 ;; rte related commands end
 

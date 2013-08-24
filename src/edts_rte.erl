@@ -26,7 +26,9 @@
 -behaviour(edts_plugin).
 
 %%%_* Exports =================================================================
--export([ rte_run/4
+-export([ interpret_module/2
+        , rte_run/4
+        , uninterpret_module/2
         ]).
 
 %% Behaviour exports
@@ -37,10 +39,13 @@
 %%%_* Defines ==================================================================
 %%%_* API ======================================================================
 rte_run(Node, Module, Func, Args) ->
-  case edts_dist:call(Node, edts_rte_server, rte_run, [Module, Func, Args]) of
-    {badrpc, _} -> {error, not_found};
-    Result      -> Result
-  end.
+  dist_call(Node, edts_rte_server, rte_run, [Module, Func, Args]).
+
+interpret_module(Node, Module) ->
+  dist_call(Node, edts_rte_int_listener, interpret_module, [Module]).
+
+uninterpret_module(Node, Module) ->
+  dist_call(Node, edts_rte_int_listener, uninterpret_module, [Module]).
 
 %% Behaviour callbacks
 edts_server_services()  -> [].
@@ -52,6 +57,13 @@ project_node_modules()  ->
   , edts_rte_sup
   ].
 project_node_services() -> [edts_rte_app].
+
+%%%_* Internal =================================================================
+dist_call(Node, Module, Func, Args) ->
+  case edts_dist:call(Node, Module, Func, Args) of
+    {badrpc, _} -> {error, not_found};
+    Result      -> Result
+  end.
 
 %%%_* Unit tests ===============================================================
 
