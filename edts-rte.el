@@ -44,6 +44,31 @@
     (edts-rte-log-info "Uninterpreting module: %s" module)
     (rte-rest-post body)))
 
+(defun edts-rte-update-record-defs ()
+  "Update the record definitions"
+  (interactive)
+  (let* ((module     (ferl-get-module))
+         (body       (get-update-record-defs-body module)))
+    (edts-rte-log-info "Update the record definitions: %s" module)
+    (rte-rest-post body)))
+
+(defun edts-rte-forget-record-defs (record-name)
+  "Make RTE forget a particular record definition, if not specified
+then forget all"
+  (interactive "sInput Arguments:")
+  (let* ((body (get-forget-record-defs-body record-name)))
+    (if (eq "" record-name)
+        (edts-rte-log-info "Forget the record definitions of %s" record-name)
+      (edts-rte-log-info "Forget all the record definitions"))
+    (rte-rest-post body)))
+
+(defun edts-rte-list-stored-record-names ()
+  "List the name of all the record that are stored by RTE"
+  (interactive)
+  (let* ((body (get-list-record-names-body)))
+    (edts-rte-log-info "List all the record definitions...")
+    (rte-rest-post body)))
+
 (defun rte-rest-post (body)
   (let* ((node     (edts-buffer-node-name))
          (resource (list "plugins" "rte" node "cmd"))
@@ -109,6 +134,18 @@ White space here is any of: space, tab, emacs newline (line feed, ASCII 10)."
 (defun get-uninterpret-module-body (module)
   "Get the json body for the uninterpret-module rest request"
   (format "{\"cmd\": \"uninterpret_module\",\"args\": [\"%s\"]}" module))
+
+(defun get-update-record-defs-body (module)
+  "Get the json body for the update-record-defs rest request"
+  (format "{\"cmd\": \"update_record_defs\",\"args\": [\"%s\"]}" module))
+
+(defun get-list-record-names-body ()
+  "Get the json body for the list-record-defs rest request"
+  (format "{\"cmd\": \"list_record_names\",\"args\": []}"))
+
+(defun get-forget-record-defs-body (record-name)
+  "Get the json body for the forget-record-defs rest request"
+  (format "{\"cmd\": \"forget_record_defs\",\"args\": [\"%s\"]}" record-name))
 
 ;; find the mfa of the point
 (defun find-mfa-under-point ()

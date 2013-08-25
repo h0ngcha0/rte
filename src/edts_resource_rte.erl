@@ -130,12 +130,18 @@ do_retrieve_cmd_and_args({struct,[{<<"cmd">>, Cmd}, {<<"args">>, Args}]}) ->
 do_retrieve_cmd_and_args({struct,[{<<"cmd">>, Cmd}]}) ->
   {to_atom(Cmd), nil}.
 
-run_command(rte_run, [Module, Fun, Args], Node) ->
+run_command(rte_run, [Module, Fun, Args], Node)     ->
   edts_rte:rte_run(Node, Module, Fun, Args);
-run_command(interpret_module, [Module], Node)   ->
+run_command(interpret_module, [Module], Node)       ->
   edts_rte:interpret_module(Node, Module);
-run_command(uninterpret_module, [Module], Node) ->
-  edts_rte:uninterpret_module(Node, Module).
+run_command(uninterpret_module, [Module], Node)     ->
+  edts_rte:uninterpret_module(Node, Module);
+run_command(update_record_defs, [Module], Node)     ->
+  edts_rte:update_record_defs(Node, Module);
+run_command(list_record_names, [], Node)            ->
+  edts_rte:list_record_names(Node);
+run_command(forget_record_defs, [RecordName], Node) ->
+  edts_rte:forget_record_defs(Node, RecordName).
 
 %%%_* Unit tests ===============================================================
 init_test() ->

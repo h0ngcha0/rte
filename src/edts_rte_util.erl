@@ -180,7 +180,6 @@ touch_clause(ClauseStruct, Line) ->
   ClauseStruct#clause_struct{ touched = true
                             , sub_clause = SubClauseStruct}.
 
-
 read_and_add_records(Module, RT) ->
   read_and_add_records(Module, '_', [], [], RT).
 

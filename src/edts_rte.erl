@@ -26,9 +26,12 @@
 -behaviour(edts_plugin).
 
 %%%_* Exports =================================================================
--export([ interpret_module/2
+-export([ forget_record_defs/2
+        , interpret_module/2
+        , list_record_names/1
         , rte_run/4
         , uninterpret_module/2
+        , update_record_defs/2
         ]).
 
 %% Behaviour exports
@@ -46,6 +49,15 @@ interpret_module(Node, Module) ->
 
 uninterpret_module(Node, Module) ->
   dist_call(Node, edts_rte_int_listener, uninterpret_module, [Module]).
+
+list_record_names(Node) ->
+  dist_call(Node, edts_rte_server, list_record_names, []).
+
+update_record_defs(Node, Module) ->
+  dist_call(Node, edts_rte_server, update_record_defs, [Module]).
+
+forget_record_defs(Node, RecordName) ->
+  dist_call(Node, edts_rte_server, forget_record_defs, [RecordName]).
 
 %% Behaviour callbacks
 edts_server_services()  -> [].

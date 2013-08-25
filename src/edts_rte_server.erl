@@ -37,9 +37,12 @@
 %% APIs for the int listener
 -export([ break_at/1
         , finished_attach/1
+        , forget_record_defs/1
+        , list_record_names/0
         , read_and_add_records/1
         , rte_run/3
         , send_exit/0
+        , update_record_defs/1
         ]).
 
 %% gen_server callbacks
@@ -65,7 +68,6 @@
                    , mfa_info_tree         = []         :: list()  %% FIXME type
                    , module_cache          = []         :: list()  %% FIXME type
                    , proc                  = unattached :: unattached | pid()
-                   , record_table          = undefined  :: atom()
                    , result                = undefined  :: term()
                    }).
 
@@ -107,6 +109,29 @@ start_link() ->
 %%------------------------------------------------------------------------------
 rte_run(Module, Fun, Args) ->
   gen_server:call(?SERVER, {rte_run, Module, Fun, Args}).
+
+%%------------------------------------------------------------------------------
+%% @doc
+%% Update the record definition table.
+%% Return a list of the records the definition of which are stored.
+-spec update_record_defs(Module::module()) -> {ok, [term()]}.
+update_record_defs(Module) ->
+  gen_server:call(?SERVER, {update_record_defs, Module}).
+
+%%------------------------------------------------------------------------------
+%% @doc
+%% List the definition of all the records that are stored in RTE
+%% Return a list of the records the definition of which are stored.
+-spec list_record_names() -> {ok, [term()]}.
+list_record_names() ->
+  gen_server:call(?SERVER, list_record_names).
+
+%%------------------------------------------------------------------------------
+%% @doc
+%% Remove a record from the record definition table.
+-spec forget_record_defs(RecordName :: atom()) -> {ok, [term()]}.
+forget_record_defs(RecordName) ->
+  gen_server:call(?SERVER, {forget_record_defs, RecordName}).
 
 %%------------------------------------------------------------------------------
 %% @doc Used by int listener to tell edts_rte_server that it has attached
@@ -154,11 +179,12 @@ init([]) ->
   %% records in erlang are purely syntactic sugar. create a table to store the
   %% mapping between records and their definitions.
   %% set the table to public to make debugging easier
-  RcdTbl = ets:new(edts_rte_util:record_table_name(), [public, named_table]),
-  {ok, #rte_state{record_table = RcdTbl}}.
+  RcdTbl = edts_rte_util:record_table_name(),
+  RcdTbl = ets:new(RcdTbl, [public, named_table]),
+  {ok, #rte_state{}}.
 
 handle_call({rte_run, Module, Fun, Args0}, _From, State) ->
-  RcdTbl   = State#rte_state.record_table,
+  RcdTbl   = edts_rte_util:record_table_name(),
   Args     = binary_to_list(Args0),
   ArgsTerm = edts_rte_util:convert_list_to_term(Args, RcdTbl),
   Arity    = length(ArgsTerm),
@@ -167,7 +193,7 @@ handle_call({rte_run, Module, Fun, Args0}, _From, State) ->
 
   %% try to read the record from the current module.. right now this is the
   %% only record support
-  Res = exec([ fun() -> read_record_definition(Module, RcdTbl) end
+  Res = exec([ fun() -> update_record_definition(Module) end
              , fun() -> interpret_current_module(Module) end
              , fun() -> set_breakpoint_beg(Module, Fun, Arity) end
              , fun() -> run_mfa(Module, Fun, ArgsTerm) end]),
@@ -188,7 +214,30 @@ handle_call({rte_run, Module, Fun, Args0}, _From, State) ->
       {reply, {ok, finished}, State1};
     {error, Rsn} ->
       {reply, {error, Rsn}, State}
-  end.
+  end;
+handle_call({update_record_defs, Module}, _From, State) ->
+  Reply = update_record_definition(Module),
+  {reply, Reply, State};
+handle_call(list_record_names, _From, State) ->
+  Reply = list_stored_record_names(),
+  {reply, Reply, State};
+handle_call({forget_record_defs, ''}, _From, State) ->
+  %% if user didn't specify a record name, delete all the entries from
+  %% the record definition table.
+  true = ets:delete_all_objects(edts_rte_util:record_table_name()),
+  Msg  = make_record_return_message('all records', " are forgotten"),
+  {reply, {ok, Msg}, State};
+handle_call({forget_record_defs, RecordName}, _From, State) ->
+  Reply =
+    case ets:lookup(edts_rte_util:record_table_name(), RecordName) of
+      [] ->
+        io:format("recordname:~p~n", [RecordName]),
+        {error, make_record_return_message(RecordName, " is not stored")};
+      [_RecordDef] ->
+        ets:delete(edts_rte_util:record_table_name(), RecordName),
+        {ok, make_record_return_message(RecordName, " is forgotten")}
+    end,
+  {reply, Reply, State}.
 
 %%------------------------------------------------------------------------------
 %% @private
@@ -267,10 +316,17 @@ code_change(_OldVsn, State, _Extra) ->
 
 %%%_* Internal =================================================================
 %% @doc Read and store the record definitions from the specified module.
-read_record_definition(Module, RcdTbl) ->
+update_record_definition(Module) ->
+  RcdTbl   = edts_rte_util:record_table_name(),
   AddedRds = edts_rte_util:read_and_add_records(Module, RcdTbl),
   edts_rte_app:debug("added record definitions:~p~n", [AddedRds]),
-  ok.
+  {ok, AddedRds}.
+
+%% @doc Read the names of all the record stored in RTE
+list_stored_record_names() ->
+  Reply = lists:map( fun(Record) -> element(1, Record) end
+                   , ets:tab2list(edts_rte_util:record_table_name())),
+  {ok, Reply}.
 
 %% @doc interpret the current module
 interpret_current_module(Module) ->
@@ -308,6 +364,10 @@ lift(F) ->
     {error, Rsn} -> {error, Rsn};
     Rsn          -> {ok, Rsn}
   end.
+
+%% @doc Make a return message for record related APIs
+make_record_return_message(RecordName, Msg) ->
+  list_to_atom(string:concat(atom_to_list(RecordName), Msg)).
 
 %%------------------------------------------------------------------------------
 %% @doc Send the rte result to the rte server.
