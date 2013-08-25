@@ -211,7 +211,7 @@ handle_call({rte_run, Module, Fun, Args0}, _From, State) ->
                                 , result         = undefined
                                 , exit_p         = false
                                 },
-      {reply, {ok, finished}, State1};
+      {reply, {ok, "Finished"}, State1};
     {error, Rsn} ->
       {reply, {error, Rsn}, State}
   end;
@@ -317,15 +317,18 @@ code_change(_OldVsn, State, _Extra) ->
 %%%_* Internal =================================================================
 %% @doc Read and store the record definitions from the specified module.
 update_record_definition(Module) ->
-  RcdTbl   = edts_rte_util:record_table_name(),
-  AddedRds = edts_rte_util:read_and_add_records(Module, RcdTbl),
-  edts_rte_app:debug("added record definitions:~p~n", [AddedRds]),
-  {ok, AddedRds}.
+  RcdTbl    = edts_rte_util:record_table_name(),
+  AddedRds  = edts_rte_util:read_and_add_records(Module, RcdTbl),
+  Msg       = lists:flatten(
+                io_lib:format("Added record definitions:~p", [AddedRds])),
+  edts_rte_app:debug(Msg),
+  {ok, Msg}.
 
 %% @doc Read the names of all the record stored in RTE
 list_stored_record_names() ->
-  Reply = lists:map( fun(Record) -> element(1, Record) end
-                   , ets:tab2list(edts_rte_util:record_table_name())),
+  Records = lists:map( fun(Record) -> element(1, Record) end
+                     , ets:tab2list(edts_rte_util:record_table_name())),
+  Reply   = lists:flatten(io_lib:format("All saved records:~p", [Records])),
   {ok, Reply}.
 
 %% @doc interpret the current module
@@ -337,7 +340,7 @@ interpret_current_module(Module) ->
 set_breakpoint_beg(Module, Function, Arity) ->
   case edts_rte_int_listener:set_breakpoint(Module, Function, Arity) of
     {ok, set, {Module, Function, Arity}} -> ok;
-    _                                    -> {error, unable_to_set_breakpoint}
+    _                                    -> {error, "Unable to set breakpoint"}
   end.
 
 %% @doc run mfa in a seperate process
@@ -347,7 +350,7 @@ run_mfa(Module, Fun, ArgsTerm) ->
   {ok, Pid}.
 
 %% @doc @see tulib_maybe:do/1
--spec exec([fun()]) -> {ok, atom()} | {error, atom()}.
+-spec exec([fun()]) -> {ok, atom()} | {error, list()}.
 exec([F])    -> lift(F);
 exec([F|Fs]) -> case lift(F) of
                   ok               -> exec(Fs);
@@ -358,16 +361,16 @@ exec([F|Fs]) -> case lift(F) of
 %% @doc @see tulib_maybe:lift/1
 lift(F) ->
   case F() of
-    ok           -> {ok, ok};
+    ok           -> {ok, "ok"};
     {ok, Res}    -> {ok, Res};
-    error        -> {error, error};
+    error        -> {error, "error"};
     {error, Rsn} -> {error, Rsn};
     Rsn          -> {ok, Rsn}
   end.
 
 %% @doc Make a return message for record related APIs
 make_record_return_message(RecordName, Msg) ->
-  list_to_atom(string:concat(atom_to_list(RecordName), Msg)).
+  string:concat(atom_to_list(RecordName), Msg).
 
 %%------------------------------------------------------------------------------
 %% @doc Send the rte result to the rte server.

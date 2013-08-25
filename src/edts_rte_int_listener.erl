@@ -102,7 +102,8 @@ is_module_interpreted(Module) ->
 %% @doc
 %% Toggles a breakpoint at Module:Line.
 %% @end
--spec set_breakpoint(Module :: module(), Fun :: function(), Arity :: non_neg_integer()) ->
+-spec set_breakpoint( Module :: module(), Fun :: function()
+                    , Arity :: non_neg_integer()) ->
                         {error, function_not_found} | {ok, set, tuple()}.
 
 %%------------------------------------------------------------------------------
@@ -339,7 +340,7 @@ interpret(Module) ->
   end.
 
 make_return_message(Module, Msg) ->
-  list_to_atom(string:concat(atom_to_list(Module), Msg)).
+  string:concat(atom_to_list(Module), Msg).
 
 %%------------------------------------------------------------------------------
 %% @doc

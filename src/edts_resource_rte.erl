@@ -117,7 +117,8 @@ to_json(ReqData, Ctx) ->
 %% Encodes rte replies into the appropriate json structure
 %% @end
 encode_rte_info({State, Info}) ->
-  [{state, State}, {message, Info}].
+  %% string has to be encoded in binary in mochijson2
+  [{state, State}, {message, list_to_binary(Info)}].
 
 retrieve_cmd_and_args(ReqData) ->
   do_retrieve_cmd_and_args(

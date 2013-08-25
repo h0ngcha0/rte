@@ -72,9 +72,12 @@ project_node_services() -> [edts_rte_app].
 
 %%%_* Internal =================================================================
 dist_call(Node, Module, Func, Args) ->
-  case edts_dist:call(Node, Module, Func, Args) of
-    {badrpc, _} -> {error, not_found};
-    Result      -> Result
+  try edts_dist:call(Node, Module, Func, Args)
+  catch
+    error:Err ->
+      edts_log:error("Error in remote call ~p:~p/~p on ~p: ~p",
+                     [Module, Func, length(Args), Node, Err]),
+      {error, lists:flatten(io_lib:format("~p", [Err]))}
   end.
 
 %%%_* Unit tests ===============================================================
